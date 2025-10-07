@@ -1,19 +1,18 @@
 package com.hritik.booking_service.service;
 
 import com.hritik.booking_service.dto.*;
+import com.hritik.booking_service.exception.ResourceNotFoundException;
 import com.hritik.booking_service.repository.BookingRepository;
 import com.hritik.booking_service.repository.PassengerRepository;
 import com.hritik.entity_service.model.Booking;
 import com.hritik.entity_service.model.BookingStatus;
 import com.hritik.entity_service.model.Passenger;
-import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityManager;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 
@@ -24,10 +23,13 @@ public class BookingServiceImpl implements BookingService {
 
     private final RestTemplate restTemplate;
 
+    private final EntityManager entityManager;
+
     public BookingServiceImpl(PassengerRepository passengerRepository,
-                              BookingRepository bookingRepository) {
+                              BookingRepository bookingRepository, EntityManager entityManager) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
+        this.entityManager = entityManager;
         this.restTemplate = new RestTemplate();
     }
 
@@ -35,15 +37,22 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponseDto createBooking(BookingDto bookingDto) {
-        Optional<Passenger> passenger = passengerRepository.findById(bookingDto.getPassengerId());
+        boolean exists = passengerRepository.existsById(bookingDto.getPassengerId());
+        if (!exists) {
+            throw new ResourceNotFoundException(
+                    "Passenger with id " + bookingDto.getPassengerId() + " not found"
+            );
+        }
 
+        Passenger passenger = entityManager.getReference(Passenger.class, bookingDto.getPassengerId());
 
         Booking booking = Booking.builder()
-                .passenger(passenger.get())
+                .passenger(passenger)
                 .bookingStatus(BookingStatus.ASSIGNING_DRIVER)
                 .startLocation(bookingDto.getStartLocation())
                 .endLocation(bookingDto.getEndLocation())
                 .build();
+
 
         Booking newBooking = bookingRepository.save(booking);
 
@@ -60,8 +69,15 @@ public class BookingServiceImpl implements BookingService {
         );
 
 
-
         List<DriverLocationDto> drivers = response.getBody().getData();
+        for (DriverLocationDto driver : drivers) {
+            System.out.println("**************");
+            System.out.print(driver.getDriverId() + " ");
+            System.out.print(driver.getLatitude() + " ");
+            System.out.print(driver.getLongitude());
+            System.out.println("**************");
+
+        }
         return BookingResponseDto.builder()
                 .bookingId(newBooking.getId())
                 .bookingStatus(newBooking.getBookingStatus().toString())
