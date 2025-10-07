@@ -1,6 +1,6 @@
 package com.hritik.booking_service.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.gson.annotations.SerializedName;
 import lombok.*;
 
 @Getter
@@ -10,12 +10,12 @@ import lombok.*;
 @Builder
 public class DriverLocationDto {
 
-    @JsonProperty("driver_id")
+    @SerializedName("driver_id")
     private String driverId;
 
     private double latitude;
     private double longitude;
 
-    @JsonProperty("distance_km")
+    @SerializedName("distance_km")
     private double distanceKm;
 }
