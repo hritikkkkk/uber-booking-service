@@ -1,5 +1,6 @@
 package com.hritik.booking_service.service;
 
+import com.hritik.booking_service.client.LocationServiceClient;
 import com.hritik.booking_service.dto.*;
 import com.hritik.booking_service.exception.ResourceNotFoundException;
 import com.hritik.booking_service.repository.BookingRepository;
@@ -8,32 +9,32 @@ import com.hritik.entity_service.model.Booking;
 import com.hritik.entity_service.model.BookingStatus;
 import com.hritik.entity_service.model.Passenger;
 import jakarta.persistence.EntityManager;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+
+import retrofit2.Callback;
 
 import java.util.List;
 
-@Service
+import retrofit2.Call;
+import retrofit2.Response;
 
+@Service
 public class BookingServiceImpl implements BookingService {
 
     private final PassengerRepository passengerRepository;
     private final BookingRepository bookingRepository;
-
-    private final RestTemplate restTemplate;
-
     private final EntityManager entityManager;
+    private final LocationServiceClient locationServiceClient;
 
     public BookingServiceImpl(PassengerRepository passengerRepository,
-                              BookingRepository bookingRepository, EntityManager entityManager) {
+                              BookingRepository bookingRepository,
+                              EntityManager entityManager,
+                              LocationServiceClient locationServiceClient) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
         this.entityManager = entityManager;
-        this.restTemplate = new RestTemplate();
+        this.locationServiceClient = locationServiceClient;
     }
-
-    private static final String LOCATION_SERVICE = "http://localhost:7777";
 
     @Override
     public BookingResponseDto createBooking(BookingDto bookingDto) {
@@ -53,7 +54,6 @@ public class BookingServiceImpl implements BookingService {
                 .endLocation(bookingDto.getEndLocation())
                 .build();
 
-
         Booking newBooking = bookingRepository.save(booking);
 
         NearbyDriversRequestDto request = NearbyDriversRequestDto.builder()
@@ -62,26 +62,32 @@ public class BookingServiceImpl implements BookingService {
                 .build();
 
 
-        ResponseEntity<DriverLocationResponse> response = restTemplate.postForEntity(
-                LOCATION_SERVICE + "/api/v1/locations/drivers/nearby",
-                request,
-                DriverLocationResponse.class
-        );
+        // Asynchronous Retrofit call
+        locationServiceClient.getNearbyDrivers(request).enqueue(new Callback<>() {
+            @Override
+            public void onResponse(Call<DriverLocationResponse> call, Response<DriverLocationResponse> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    List<DriverLocationDto> drivers = response.body().getData();
+                    drivers.forEach(driver -> {
+                        System.out.println("**************");
+                        System.out.print(driver.getDriverId() + " ");
+                        System.out.print(driver.getLatitude() + " ");
+                        System.out.print(driver.getLongitude() + " ");
+                        System.out.println(driver.getDistanceKm());
+                        System.out.println("**************");
+                    });
+                }
+            }
 
+            @Override
+            public void onFailure(Call<DriverLocationResponse> call, Throwable t) {
+                t.printStackTrace();
+            }
+        });
 
-        List<DriverLocationDto> drivers = response.getBody().getData();
-        for (DriverLocationDto driver : drivers) {
-            System.out.println("**************");
-            System.out.print(driver.getDriverId() + " ");
-            System.out.print(driver.getLatitude() + " ");
-            System.out.print(driver.getLongitude());
-            System.out.println("**************");
-
-        }
         return BookingResponseDto.builder()
                 .bookingId(newBooking.getId())
                 .bookingStatus(newBooking.getBookingStatus().toString())
                 .build();
-
     }
 }
