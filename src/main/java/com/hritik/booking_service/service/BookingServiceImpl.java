@@ -2,18 +2,23 @@ package com.hritik.booking_service.service;
 
 import com.hritik.booking_service.client.LocationServiceClient;
 import com.hritik.booking_service.dto.*;
+import com.hritik.booking_service.exception.DriverNotAvailableException;
 import com.hritik.booking_service.exception.ResourceNotFoundException;
 import com.hritik.booking_service.repository.BookingRepository;
+import com.hritik.booking_service.repository.DriverRepository;
 import com.hritik.booking_service.repository.PassengerRepository;
 import com.hritik.entity_service.model.Booking;
 import com.hritik.entity_service.model.BookingStatus;
+import com.hritik.entity_service.model.Driver;
 import com.hritik.entity_service.model.Passenger;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 
+import org.springframework.transaction.annotation.Transactional;
 import retrofit2.Callback;
 
 import java.util.List;
+import java.util.Optional;
 
 import retrofit2.Call;
 import retrofit2.Response;
@@ -25,15 +30,18 @@ public class BookingServiceImpl implements BookingService {
     private final BookingRepository bookingRepository;
     private final EntityManager entityManager;
     private final LocationServiceClient locationServiceClient;
+    private final DriverRepository driverRepository;
 
     public BookingServiceImpl(PassengerRepository passengerRepository,
                               BookingRepository bookingRepository,
                               EntityManager entityManager,
-                              LocationServiceClient locationServiceClient) {
+                              LocationServiceClient locationServiceClient,
+                              DriverRepository driverRepository) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
         this.entityManager = entityManager;
         this.locationServiceClient = locationServiceClient;
+        this.driverRepository = driverRepository;
     }
 
     @Override
@@ -90,4 +98,41 @@ public class BookingServiceImpl implements BookingService {
                 .bookingStatus(newBooking.getBookingStatus().toString())
                 .build();
     }
+
+    @Override
+    @Transactional
+    public UpdateBookingResponseDto updateBooking(UpdateBookingRequestDto dto, Long bookingId) {
+
+        BookingSummaryDto bookingSummary = bookingRepository.findBookingSummaryById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking with id " + bookingId + " not found"));
+
+
+        Long driverId = dto.getDriverId()
+                .orElseThrow(() -> new IllegalArgumentException("Driver ID is required"));
+
+
+        DriverDto driverDto = driverRepository.findDriverDtoById(driverId);
+
+        if (!driverDto.getIsAvailable()) {
+            throw new DriverNotAvailableException("Driver is not available");
+        }
+
+        if (!driverRepository.existsById(driverId)) {
+            throw new ResourceNotFoundException("Driver with id " + driverId + " not found");
+        }
+
+        bookingRepository.updateDriverAndStatus(bookingId,
+                entityManager.getReference(Driver.class, driverId),
+                BookingStatus.SCHEDULED);
+
+
+        driverRepository.markDriverUnavailable(driverId);
+
+        return UpdateBookingResponseDto.builder()
+                .bookingId(bookingSummary.getId())
+                .status(bookingSummary.getBookingStatus())
+                .driver(Optional.of(driverDto))
+                .build();
+    }
+
 }
