@@ -23,7 +23,7 @@ public class BookingController {
         return new ResponseEntity<>(bookingService.createBooking(bookingDto), HttpStatus.CREATED);
     }
 
-    @PatchMapping("{BookingId}")
+    @PostMapping("{BookingId}")
     public ResponseEntity<UpdateBookingResponseDto> updateBooking(@RequestBody UpdateBookingRequestDto updateBookingRequestDto, @PathVariable Long BookingId) {
         return new ResponseEntity<>(bookingService.updateBooking(updateBookingRequestDto, BookingId), HttpStatus.OK);
     }

@@ -1,6 +1,7 @@
 package com.hritik.booking_service.service;
 
 import com.hritik.booking_service.client.LocationServiceClient;
+import com.hritik.booking_service.client.UberSocketClient;
 import com.hritik.booking_service.dto.*;
 import com.hritik.booking_service.exception.DriverNotAvailableException;
 import com.hritik.booking_service.exception.ResourceNotFoundException;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import retrofit2.Callback;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,16 +34,19 @@ public class BookingServiceImpl implements BookingService {
     private final LocationServiceClient locationServiceClient;
     private final DriverRepository driverRepository;
 
+    private final UberSocketClient uberSocketClient;
+
     public BookingServiceImpl(PassengerRepository passengerRepository,
                               BookingRepository bookingRepository,
                               EntityManager entityManager,
                               LocationServiceClient locationServiceClient,
-                              DriverRepository driverRepository) {
+                              DriverRepository driverRepository,UberSocketClient uberSocketClient) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
         this.entityManager = entityManager;
         this.locationServiceClient = locationServiceClient;
         this.driverRepository = driverRepository;
+        this.uberSocketClient=uberSocketClient;
     }
 
     @Override
@@ -85,6 +90,11 @@ public class BookingServiceImpl implements BookingService {
                         System.out.println("**************");
                     });
                 }
+                try {
+                    raiseRideRequestAsync(RideRequestDto.builder().passengerId(bookingDto.getPassengerId()).bookingId(newBooking.getId()).build());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
 
             @Override
@@ -110,16 +120,13 @@ public class BookingServiceImpl implements BookingService {
         Long driverId = dto.getDriverId()
                 .orElseThrow(() -> new IllegalArgumentException("Driver ID is required"));
 
-
-        DriverDto driverDto = driverRepository.findDriverDtoById(driverId);
+        DriverDto driverDto = driverRepository.findDriverDtoById(driverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Driver with id " + driverId + " not found"));
 
         if (!driverDto.getIsAvailable()) {
             throw new DriverNotAvailableException("Driver is not available");
         }
 
-        if (!driverRepository.existsById(driverId)) {
-            throw new ResourceNotFoundException("Driver with id " + driverId + " not found");
-        }
 
         bookingRepository.updateDriverAndStatus(bookingId,
                 entityManager.getReference(Driver.class, driverId),
@@ -133,6 +140,31 @@ public class BookingServiceImpl implements BookingService {
                 .status(bookingSummary.getBookingStatus())
                 .driver(Optional.of(driverDto))
                 .build();
+    }
+
+    private void raiseRideRequestAsync(RideRequestDto requestDto) throws IOException {
+        Call<Boolean> call = uberSocketClient.raiseRideRequest(requestDto);
+
+        System.out.println(call.request().url() + " " + call.request().method() + " " + call.request().headers());
+        call.enqueue(new Callback<>() {
+            @Override
+            public void onResponse(Call<Boolean> call, Response<Boolean> response) {
+                System.out.println(response.isSuccessful());
+                System.out.println(response.message());
+                if (response.isSuccessful() && response.body() != null) {
+                    Boolean result = response.body();
+                    System.out.println("Driver response is" + result.toString());
+
+                } else {
+                    System.out.println("Request for ride failed" + response.message());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<Boolean> call, Throwable t) {
+                t.printStackTrace();
+            }
+        });
     }
 
 }

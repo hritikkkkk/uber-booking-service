@@ -20,8 +20,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                               @Param("driver") Driver driver,
                               @Param("status") BookingStatus status);
 
-    boolean existsById(Long id);
-
     @Query("SELECT new com.hritik.booking_service.dto.BookingSummaryDto(b.id, b.bookingStatus) " +
             "FROM Booking b WHERE b.id = :bookingId")
     Optional<BookingSummaryDto> findBookingSummaryById(@Param("bookingId") Long bookingId);
