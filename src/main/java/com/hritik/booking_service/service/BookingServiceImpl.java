@@ -21,6 +21,7 @@ import retrofit2.Callback;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import retrofit2.Call;
 import retrofit2.Response;
@@ -36,17 +37,20 @@ public class BookingServiceImpl implements BookingService {
 
     private final UberSocketClient uberSocketClient;
 
+    private final KafkaProducerService kafkaProducerService;
+
     public BookingServiceImpl(PassengerRepository passengerRepository,
                               BookingRepository bookingRepository,
                               EntityManager entityManager,
                               LocationServiceClient locationServiceClient,
-                              DriverRepository driverRepository,UberSocketClient uberSocketClient) {
+                              DriverRepository driverRepository, UberSocketClient uberSocketClient, KafkaProducerService kafkaProducerService) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
         this.entityManager = entityManager;
         this.locationServiceClient = locationServiceClient;
         this.driverRepository = driverRepository;
         this.uberSocketClient=uberSocketClient;
+        this.kafkaProducerService = kafkaProducerService;
     }
 
     @Override
@@ -91,10 +95,23 @@ public class BookingServiceImpl implements BookingService {
                     });
                 }
                 try {
+                    List<DriverLocationDto> drivers = response.body().getData();
+                    List driverIds = drivers.stream()
+                            .map(driver -> Long.parseLong(driver.getDriverId()))
+                            .collect(Collectors.toList());
+                    RideRequestDto rideRequest = RideRequestDto.builder()
+                            .passengerId(bookingDto.getPassengerId())
+                            .startLocation(bookingDto.getStartLocation())
+                            .endLocation(bookingDto.getEndLocation())
+                            .driverIds(driverIds)
+                            .bookingId(newBooking.getId())
+                            .build();
                     raiseRideRequestAsync(RideRequestDto.builder().passengerId(bookingDto.getPassengerId()).bookingId(newBooking.getId()).build());
+                    kafkaProducerService.sendRideRequest(rideRequest);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
+
             }
 
             @Override
